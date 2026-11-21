@@ -6,7 +6,7 @@ export function roleFields(role) {
   return {
     institution: [ROLES.STUDENT, ROLES.ADVISOR, ROLES.HOD, ROLES.PRINCIPAL].includes(role),
     department: [ROLES.STUDENT, ROLES.ADVISOR, ROLES.HOD].includes(role),
-    year: [ROLES.STUDENT, ROLES.ADVISOR].includes(role),
+    year: role === ROLES.STUDENT,
     section: [ROLES.STUDENT, ROLES.ADVISOR].includes(role),
     hostel: [ROLES.WARDEN, ROLES.COUNCILLOR].includes(role),
     position: role === ROLES.ADMIN,
@@ -27,8 +27,10 @@ export function profileForRole(form, role) {
   const fields = roleFields(role);
   return {
     institution: fields.institution ? form.institution || '' : '',
-    department: fields.department ? canonicalDepartment(form.department) : '',
-    year: isCommonFirstYear({...form,role}) ? 1 : fields.year ? Number(form.year) || null : null,
+    department: fields.department ? canonicalDepartment(role === ROLES.HOD ? (form.departments?.[0] || form.department) : form.department) : '',
+    departments: role === ROLES.HOD ? [...new Set((Array.isArray(form.departments) && form.departments.length ? form.departments : [form.department]).map(canonicalDepartment).filter(Boolean))].slice(0,2) : [],
+    year: isCommonFirstYear({...form,role}) ? 1 : fields.year ? Number(form.year) || null : role === ROLES.ADVISOR ? (normalizeAdvisorYears(form.yearCoverage)[0] || null) : null,
+    yearCoverage: role === ROLES.ADVISOR ? normalizeAdvisorYears(form.yearCoverage?.length ? form.yearCoverage : form.year ? [form.year] : []) : [],
     section: fields.section ? String(form.section || '').trim().toUpperCase() : '',
     sections: role === ROLES.HOD && isCommonFirstYear({...form,role}) ? normalizeSections(form.sections) : [],
     hostel: fields.hostel ? form.hostel || '' : '',
@@ -43,10 +45,16 @@ export function profileForRole(form, role) {
   };
 }
 
+export function normalizeAdvisorYears(value) {
+  return [...new Set((Array.isArray(value) ? value : []).map(Number).filter(year => Number.isInteger(year) && year >= 1 && year <= 8))].sort((a,b)=>a-b);
+}
+
 export function profileError(form, role) {
   const fields = roleFields(role), common = isCommonFirstYear({...form,role});
   if (!Object.values(ROLES).includes(role)) return 'Choose a valid role.';
   if (common && !isEngineering(form.institution)) return 'S&H common-year coverage requires an Engineering institution.';
+  if (role === ROLES.HOD && !((form.departments?.length || (form.department ? 1 : 0)) >= 1 && (form.departments?.length || (form.department ? 1 : 0)) <= 2)) return 'Choose one or two departments for this HOD.';
+  if (role === ROLES.ADVISOR && !normalizeAdvisorYears(form.yearCoverage?.length ? form.yearCoverage : form.year ? [form.year] : []).length && !common) return 'Choose at least one year for this Class Advisor.';
   for (const key of ['institution', 'department', 'year', 'section', 'hostel', 'position']) {
     if (fields[key] && !(common && ['year','section'].includes(key)) && !String(form[key] || '').trim()) return `Please provide ${key}.`;
   }

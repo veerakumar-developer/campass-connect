@@ -17,7 +17,7 @@ export function normalizeWardenCoverage(value) {
 export function wardenCoverageLabel(value) {
   return normalizeWardenCoverage(value).map(item=>{const [group,year]=item.split(':');return `Year ${year} ${WARDEN_COVERAGE[group].label}`;});
 }
-export const isCommonFirstYear = user => ['Class Advisor', 'HOD'].includes(user.role || user.requestedRole) && isScienceAndHumanities(user.department);
+export const isCommonFirstYear = user => ['Class Advisor', 'HOD'].includes(user.role || user.requestedRole) && (isScienceAndHumanities(user.department) || (user.role || user.requestedRole)==='HOD' && Array.isArray(user.departments) && user.departments.some(isScienceAndHumanities));
 
 function unique(values, key) {
   const seen = new Set(), result = [];
@@ -68,18 +68,19 @@ const coverageGender = user => user.hostel === 'Boys hostel' ? 'Male' : user.hos
 const requestGender = record => record.gender === 'Male' || record.gender === 'Female' ? record.gender : record.hostel === 'Boys hostel' ? 'Male' : record.hostel === 'Girls hostel' ? 'Female' : '';
 export function matchesStaffScope(record, user) {
   const role=user.role, common=isCommonFirstYear(user);
+  const departments=user.departments?.length ? user.departments : [user.department].filter(Boolean);
+  const commonHod=role==='HOD' && departments.some(isScienceAndHumanities) && isEngineering(user.institution) && isEngineering(record.institution) && Number(record.year)===1;
   const institution=!role || ['Class Advisor','HOD','Principal'].includes(role);
   const department=!role || ['Class Advisor','HOD'].includes(role);
-  const year=!role || role === 'Class Advisor';
   const hostelRole=!role||role==='Deputy Warden'||role==='Resident Councillor';
   const hostelName=record.hostel||(record.gender==='Male'?'Boys hostel':record.gender==='Female'?'Girls hostel':'Hostel assignment required');
   const assigned=normalizeSections(user.sections);
   const genderMatch=role?coverageGender(user)!==''&&requestGender(record)===coverageGender(user):!user.hostel||hostelName===user.hostel;
   return (!institution || !user.institution || record.institution===user.institution)
-    && (common ? isEngineering(user.institution) && isEngineering(record.institution) && Number(record.year)===1 : !department || !user.department || record.department===user.department)
-    && (common || !year || !user.year || Number(record.year)===Number(user.year))
+    && (common && role==='Class Advisor' ? isEngineering(user.institution) && isEngineering(record.institution) && Number(record.year)===1 : !department || !departments.length || departments.includes(record.department) || commonHod)
+    && (role!=='Class Advisor' || common || (user.yearCoverage?.length ? user.yearCoverage.map(Number).includes(Number(record.year)) : !user.year || Number(user.year)===Number(record.year)))
     && (role!=='Class Advisor' || !user.section || String(record.section||'').toUpperCase()===String(user.section).toUpperCase())
-    && (!(common && role==='HOD') || assigned.includes(String(record.section||'').trim().toUpperCase()))
+    && (!(commonHod || common && role==='HOD') || assigned.includes(String(record.section||'').trim().toUpperCase()))
     && (!hostelRole || genderMatch)
     && (role!=='Deputy Warden' || normalizeWardenCoverage(user.wardenCoverage).includes(coverageKey(institutionGroup(record.institution),Number(record.year))));
 }
